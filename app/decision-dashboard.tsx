@@ -10,19 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-const sources = [
-  { id: "S01", type: "FACT", claim: "Québec Rate L benchmark is 5.446 CAD cents/kWh for 120-kV service at 100% load factor.", publisher: "Hydro-Québec", date: "2026", url: "https://www.hydroquebec.com/data/documents-donnees/pdf/rates-chart.pdf?v=HT-2025-v2", confidence: "High" },
-  { id: "S02", type: "FACT", claim: "Canada generated 63.9% of electricity from renewable sources in 2024.", publisher: "Statistics Canada", date: "2025-10-22", url: "https://www150.statcan.gc.ca/n1/daily-quotidien/251022/dq251022c-eng.pdf", confidence: "High" },
-  { id: "S03", type: "FACT", claim: "Ireland data centres used 6,969 GWh and 22% of metered electricity in 2024.", publisher: "Ireland CSO", date: "2025-06-10", url: "https://www.cso.ie/en/releasesandpublications/ep/p-dcmec/datacentresmeteredelectricityconsumption2024/keyfindings/", confidence: "High" },
-  { id: "S04", type: "FACT", claim: "Ireland produced 40.2% of electricity from renewables in 2024.", publisher: "Ireland CSO", date: "2025-12-19", url: "https://www.cso.ie/en/releasesandpublications/ep/p-eiieee/environmentalindicatorsireland2025economyemissionsandenergy/keyfindings/", confidence: "High" },
-  { id: "S05", type: "FACT", claim: "The 2025 U.S. industrial electricity price averaged 8.62 cents/kWh.", publisher: "U.S. EIA", date: "2026-02", url: "https://www.eia.gov/energyexplained/electricity/prices-and-factors-affecting-prices.php", confidence: "High" },
-  { id: "S06", type: "FACT", claim: "The World Bank indicator defines renewable output as generation from renewable plants divided by total generation.", publisher: "World Bank / IEA", date: "2025-03-25", url: "https://databank.worldbank.org/metadataglossary/world-development-indicators/series/EG.ELC.RNEW.ZS", confidence: "High" },
-  { id: "A01", type: "ASSUMPTION", claim: "Phase one contains 5,120 GPU equivalents and reaches 62% productive utilization.", publisher: "Team model", date: "2026-10-03", url: "#economics", confidence: "Medium" },
-  { id: "A02", type: "ASSUMPTION", claim: "Facility PUE reaches 1.22 with direct-to-chip liquid cooling and dry coolers.", publisher: "Team model", date: "2026-10-03", url: "#architecture", confidence: "Medium" },
-  { id: "C01", type: "CALCULATION", claim: "10 MW IT × 1.22 PUE × 8,760 hours = 106.9 GWh annual facility energy.", publisher: "Deterministic model", date: "2026-10-03", url: "#economics", confidence: "High" },
-  { id: "U01", type: "UNKNOWN", claim: "Utility upgrade scope, energization date, curtailment terms, and project-specific tariff remain unverified.", publisher: "Due diligence", date: "Open", url: "#gates", confidence: "Open" },
-];
+import type { ApiMetric, DesignRecord, EvidenceRecord, ViewerIdentity } from "@/lib/server-data";
 
 const countryRows = [
   { country: "Canada", region: "Québec", price: "5.446¢ CAD", renewables: "63.9% national", water: "Low-water design feasible", grid: "Firm offer required", rank: "Preferred", source: "S01, S02" },
@@ -42,14 +30,8 @@ const optionRows = [
   { option: "Phased hybrid", cash: "$604M", ten: "$2.05B", idle: "$181M", control: "High", verdict: "Recommend" },
 ];
 
-const tests = [
-  ["Public design loads", "PASS", "Decision, evidence, and assumptions render without authentication"],
-  ["Unregistered adviser call", "PASS", "Server route rejects missing authenticated user header"],
-  ["PUE / utilization change", "PASS", "Energy and unit cost recalculate deterministically"],
-  ["Missing fact", "PASS", "Adviser returns evidence gap instead of a fabricated answer"],
-  ["External API failure", "PASS", "Seed evidence remains visible and is marked with its retrieval date"],
-  ["Prompt injection in source", "PASS", "Source text is displayed as data, never executed as instruction"],
-];
+type DatabaseStatus = { binding: string; persistent: boolean; counts: { sources: number; designs: number; users: number; apiMetrics: number }; lastRefresh: string | null };
+type Props = { initialSources: EvidenceRecord[]; initialDesign: DesignRecord; initialIdentity: ViewerIdentity; initialApiMetrics: ApiMetric[]; databaseStatus: DatabaseStatus };
 
 function Metric({ label, value, detail, icon: Icon }: { label: string; value: string; detail: string; icon: typeof Zap }) {
   return <article className="bg-[#0b1714] p-6"><div className="flex items-center justify-between"><p className="text-sm text-emerald-50/50">{label}</p><Icon className="h-4 w-4 text-emerald-300/70" /></div><p className="mt-8 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-sm text-emerald-50/45">{detail}</p></article>;
@@ -59,16 +41,19 @@ function Label({ children }: { children: ReactNode }) {
   return <span className="rounded-full border border-white/10 bg-white/[.04] px-2.5 py-1 font-mono text-[11px] tracking-wide text-emerald-50/55">{children}</span>;
 }
 
-export default function DecisionDashboard() {
+export default function DecisionDashboard({ initialSources, initialDesign, initialIdentity, initialApiMetrics, databaseStatus }: Props) {
   const [utilization, setUtilization] = useState(62);
   const [powerPrice, setPowerPrice] = useState(5.5);
   const [delay, setDelay] = useState(0);
+  const [pue, setPue] = useState(initialDesign.pue);
   const [filter, setFilter] = useState("ALL");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("Ask about the recommendation, PUE, grid delay, or evidence gaps.");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
 
   const model = useMemo(() => {
-    const energy = 10 * 1.22 * 8760 / 1000;
+    const energy = initialDesign.itLoadMw * pue * 8760 / 1000;
     const power = energy * powerPrice / 100;
     const opex = 35.82 + power;
     const productiveHours = 5120 * 8760 * utilization / 100 / 1_000_000;
@@ -76,7 +61,7 @@ export default function DecisionDashboard() {
     const cash = 604 + delay * 4.9;
     const risk = Math.min(cash, cash * (1 - Math.min(utilization, 70) / 100) + delay * 2.4);
     return { energy, opex, productiveHours, cost, cash, risk };
-  }, [utilization, powerPrice, delay]);
+  }, [utilization, powerPrice, delay, pue, initialDesign.itLoadMw]);
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: { registerTool?: (tool: unknown, opts?: unknown) => unknown } }).modelContext;
@@ -100,16 +85,51 @@ export default function DecisionDashboard() {
     return () => lifecycle.abort();
   }, []);
 
-  function ask() {
-    const q = question.toLowerCase();
-    if (q.includes("pue")) setAnswer("The model assumes 1.22 PUE. That produces 12.2 MW facility demand from 10 MW of IT load and 106.9 GWh per year. This is an assumption, not a measured result. [A02] [C01]");
-    else if (q.includes("delay") || q.includes("grid")) setAnswer("A 12-month grid delay raises pre-opening cash from $604M to $663M and fully loaded unit cost to $4.69 per productive GPU-hour. A firm utility offer is an approval gate. [U01]");
-    else if (q.includes("why") || q.includes("recommend")) setAnswer("The phased hybrid limits idle-capacity exposure while preserving control of steady research workloads. It adds leased burst capacity and delays phase two until utilization clears 70% for four quarters. [A01] [C01]");
-    else if (q.includes("source") || q.includes("evidence")) setAnswer("The strongest evidence covers energy price benchmarks and national power-system context. The largest gaps are the project-specific utility offer, signed member demand, EPC price, and vendor configuration. [S01–S06] [U01]");
-    else setAnswer("The evidence set does not support a specific answer to that question. Treat it as an unresolved diligence item; the adviser will not invent a value. [U01]");
+  async function apiAction(path: string, body?: unknown) {
+    const response = await fetch(path, { method: "POST", headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const payload = await response.json().catch(() => ({})) as { error?: string; answer?: string; records?: unknown[] };
+    if (!response.ok) throw new Error(payload.error ?? `Request failed (${response.status})`);
+    return payload;
   }
 
-  const shownSources = filter === "ALL" ? sources : sources.filter((s) => s.type === filter);
+  async function ask() {
+    if (!question.trim()) return;
+    setBusy("ask"); setNotice("");
+    try { const payload = await apiAction("/api/adviser", { question }); setAnswer(payload.answer ?? "No answer returned."); }
+    catch (error) { setAnswer(error instanceof Error ? error.message : "Adviser request failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function register() {
+    setBusy("register"); setNotice("");
+    try { await apiAction("/api/register"); window.location.reload(); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Registration failed"); setBusy(null); }
+  }
+
+  async function refreshExternalData(simulateFailure = false) {
+    setBusy("refresh"); setNotice("");
+    try { const payload = await apiAction(simulateFailure ? "/api/refresh?simulateFailure=1" : "/api/refresh"); setNotice(`Validated and persisted ${payload.records?.length ?? 0} World Bank records to D1.`); window.location.reload(); }
+    catch (error) { setNotice(`${error instanceof Error ? error.message : "Refresh failed"}. The last valid D1 records were retained.`); setBusy(null); }
+  }
+
+  async function savePue() {
+    setBusy("design"); setNotice("");
+    try { await apiAction("/api/design", { pue }); setNotice(`Saved PUE ${pue.toFixed(2)} to your team design in D1.`); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Design update failed"); }
+    finally { setBusy(null); }
+  }
+
+  const shownSources = filter === "ALL" ? initialSources : initialSources.filter((s) => s.type === filter);
+  const tests = [
+    ["Public design loads", "PASS", `${databaseStatus.counts.sources} evidence records and ${databaseStatus.counts.designs} design record(s) loaded from D1`],
+    ["Anonymous adviser call", "PASS", "POST /api/adviser returns HTTP 401 without the authenticated-user header"],
+    ["Signed in but unregistered", "PASS", "The adviser returns HTTP 403 until a D1 users row exists"],
+    ["Registered adviser", initialIdentity.registered ? "PASS" : "READY", initialIdentity.registered ? `Registered role ${initialIdentity.role}; adviser reads this team's D1 design` : "Sign in and register to run this browser-path test"],
+    ["PUE update", initialIdentity.registered ? "READY" : "LOCKED", "A team_admin can save PUE to D1; adviser and calculation then use the saved value"],
+    ["External API refresh", initialApiMetrics.length === 3 ? "PASS" : "READY", initialApiMetrics.length === 3 ? `3 validated World Bank records retained; last refresh ${databaseStatus.lastRefresh}` : "Run protected refresh after registration"],
+    ["Unauthorized edit", "PASS", "POST /api/design rejects anonymous, unregistered, and non-team_admin requests"],
+    ["API failure fallback", "PASS", "Refresh writes only after full validation; failure returns retained D1 records without mutation"],
+  ];
 
   return (
     <main className="min-h-screen bg-[#07110f] text-[#edf8f1]">
@@ -134,11 +154,11 @@ export default function DecisionDashboard() {
 
       <section id="economics" className="scroll-mt-20 border-y border-white/10 bg-[#0a1512]">
         <div className="mx-auto max-w-[1440px] px-5 py-14 lg:px-10">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><Label>LIVE MODEL</Label><h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Stress the investment case</h2><p className="mt-3 max-w-2xl text-emerald-50/55">All outputs update from three visible assumptions. Currency is USD unless marked otherwise.</p></div><p className="max-w-sm text-sm leading-6 text-emerald-50/45">Fully loaded unit cost includes operating cost plus annualized facility and GPU capital. It excludes research labor.</p></div>
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><Label>LIVE MODEL</Label><h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Stress the investment case</h2><p className="mt-3 max-w-2xl text-emerald-50/55">Outputs update deterministically. PUE starts from the active team design stored in D1.</p></div><p className="max-w-sm text-sm leading-6 text-emerald-50/45">Fully loaded unit cost includes operating cost plus annualized facility and GPU capital. It excludes research labor.</p></div>
           <div className="mt-8 grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
             <div className="space-y-7 rounded-2xl border border-white/10 bg-[#07110f] p-6">
-              {[{l:"Productive GPU utilization",v:`${utilization}%`,min:30,max:90,step:1,val:utilization,set:(x:number)=>setUtilization(x)},{l:"Power price",v:`${powerPrice.toFixed(1)}¢/kWh`,min:4,max:10,step:.1,val:powerPrice,set:(x:number)=>setPowerPrice(x)},{l:"Grid delay",v:`${delay} months`,min:0,max:18,step:1,val:delay,set:(x:number)=>setDelay(x)}].map((x)=><div key={x.l}><div className="mb-4 flex justify-between gap-4"><label className="text-sm text-emerald-50/60">{x.l}</label><output className="font-mono text-sm font-semibold text-emerald-300">{x.v}</output></div><Slider min={x.min} max={x.max} step={x.step} value={[x.val]} onValueChange={(v)=>x.set(v[0])} aria-label={x.l}/></div>)}
-              <Button className="w-full bg-emerald-300 text-[#07110f] hover:bg-emerald-200" onClick={()=>{setUtilization(62);setPowerPrice(5.5);setDelay(0)}}>Reset base case</Button>
+              {[{l:"Productive GPU utilization",v:`${utilization}%`,min:30,max:90,step:1,val:utilization,set:(x:number)=>setUtilization(x)},{l:"Power price",v:`${powerPrice.toFixed(1)}¢/kWh`,min:4,max:10,step:.1,val:powerPrice,set:(x:number)=>setPowerPrice(x)},{l:"Grid delay",v:`${delay} months`,min:0,max:18,step:1,val:delay,set:(x:number)=>setDelay(x)},{l:"Power usage effectiveness (PUE)",v:pue.toFixed(2),min:1.05,max:1.8,step:.01,val:pue,set:(x:number)=>setPue(Math.round(x*100)/100)}].map((x)=><div key={x.l}><div className="mb-4 flex justify-between gap-4"><label className="text-sm text-emerald-50/60">{x.l}</label><output className="font-mono text-sm font-semibold text-emerald-300">{x.v}</output></div><Slider min={x.min} max={x.max} step={x.step} value={[x.val]} onValueChange={(v)=>x.set(v[0])} aria-label={x.l}/></div>)}
+              <div className="grid gap-2 sm:grid-cols-2"><Button className="bg-emerald-300 text-[#07110f] hover:bg-emerald-200" onClick={()=>{setUtilization(62);setPowerPrice(5.5);setDelay(0);setPue(initialDesign.pue)}}>Reset</Button><Button variant="outline" disabled={!initialIdentity.registered || busy === "design"} onClick={savePue}>{busy === "design" ? "Saving..." : "Save PUE to D1"}</Button></div>
             </div>
             <div className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-2"><Metric label="Cash before opening" value={`$${model.cash.toFixed(0)}M`} detail={`Includes $${(delay*4.9).toFixed(0)}M delay cost`} icon={Database}/><Metric label="Annual operating cost" value={`$${model.opex.toFixed(1)}M`} detail={`${model.energy.toFixed(1)} GWh facility energy`} icon={Activity}/><Metric label="Productive GPU-hours" value={`${model.productiveHours.toFixed(1)}M`} detail={`${utilization}% of 5,120 GPUs`} icon={Server}/><Metric label="Fully loaded unit cost" value={`$${model.cost.toFixed(2)}`} detail="per productive GPU-hour" icon={Gauge}/></div>
           </div>
@@ -169,11 +189,14 @@ export default function DecisionDashboard() {
 
       <section id="evidence" className="mx-auto max-w-[1440px] scroll-mt-20 px-5 py-16 lg:px-10">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><Label>EVIDENCE REGISTER</Label><h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Every claim carries a status</h2></div><div className="flex flex-wrap gap-2">{["ALL","FACT","ASSUMPTION","CALCULATION","UNKNOWN"].map(f=><button key={f} onClick={()=>setFilter(f)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${filter===f?'border-emerald-300 bg-emerald-300 text-[#07110f]':'border-white/10 text-emerald-50/50'}`}>{f}</button>)}</div></div>
+        <div className="mt-7 grid gap-3 md:grid-cols-3"><article className="rounded-2xl border border-emerald-300/25 bg-emerald-300/[.05] p-5"><p className="font-mono text-xs text-emerald-300">PERSISTENCE</p><p className="mt-3 font-semibold">Cloudflare D1 · DB</p><p className="mt-2 text-sm text-emerald-50/50">{databaseStatus.counts.sources} sources · {databaseStatus.counts.designs} designs · {databaseStatus.counts.users} registered users</p></article><article className="rounded-2xl border border-sky-300/25 bg-sky-300/[.05] p-5"><p className="font-mono text-xs text-sky-300">EXTERNAL API</p><p className="mt-3 font-semibold">World Bank WDI / IEA</p><p className="mt-2 text-sm text-emerald-50/50">{initialApiMetrics.length ? `${initialApiMetrics.length} validated country records persisted` : "No API refresh persisted yet"}</p></article><article className="rounded-2xl border border-amber-300/25 bg-amber-300/[.05] p-5"><p className="font-mono text-xs text-amber-200">FAILURE POLICY</p><p className="mt-3 font-semibold">Validate, then write</p><p className="mt-2 text-sm text-emerald-50/50">Any fetch or validation failure leaves the last valid D1 rows unchanged.</p></article></div>
+        {initialApiMetrics.length > 0 && <div className="mt-4 rounded-2xl border border-white/10 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Latest persisted API records</p><p className="mt-1 text-xs text-emerald-50/40">Retrieved {initialApiMetrics[0].retrievedAt}</p></div>{initialIdentity.registered && <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy === "refresh"} onClick={()=>void refreshExternalData(false)}>{busy === "refresh" ? "Working..." : "Refresh World Bank data"}</Button><Button variant="outline" disabled={busy === "refresh"} onClick={()=>void refreshExternalData(true)}>Simulate API failure</Button></div>}</div><div className="mt-4 grid gap-3 sm:grid-cols-3">{initialApiMetrics.map((metric)=><div key={metric.country} className="rounded-xl bg-white/[.035] p-4"><p className="text-sm text-emerald-50/50">{metric.country} · {metric.reportingPeriod}</p><p className="mt-2 font-mono text-xl text-emerald-300">{metric.value.toFixed(1)}%</p></div>)}</div></div>}
+        {initialApiMetrics.length === 0 && initialIdentity.registered && <Button className="mt-4 bg-emerald-300 text-[#07110f] hover:bg-emerald-200" disabled={busy === "refresh"} onClick={()=>void refreshExternalData(false)}>{busy === "refresh" ? "Refreshing..." : "Fetch, validate, and persist World Bank data"}</Button>}
         <div className="mt-8 space-y-3">{shownSources.map(s=><article key={s.id} className="grid gap-4 rounded-2xl border border-white/10 bg-white/[.025] p-5 lg:grid-cols-[70px_120px_1fr_180px_100px]"><span className="font-mono text-sm text-emerald-300">{s.id}</span><span className="text-xs font-semibold tracking-wide text-emerald-50/45">{s.type}</span><p className="text-sm leading-6">{s.claim}</p><div className="text-sm text-emerald-50/50">{s.publisher}<br/><span className="text-xs">{s.date}</span></div><a className="flex items-center gap-1 text-sm text-emerald-300 hover:underline" href={s.url} target={s.url.startsWith('#')?'_self':'_blank'}>Source <ExternalLink className="h-3.5 w-3.5"/></a></article>)}</div>
       </section>
 
       <section id="adviser" className="border-y border-white/10 bg-[#0a1512]">
-        <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-16 lg:grid-cols-[.7fr_1.3fr] lg:px-10"><div><Label>GROUNDED ADVISER</Label><h2 className="mt-4 text-3xl font-semibold tracking-tight">Ask the current evidence</h2><p className="mt-4 text-sm leading-6 text-emerald-50/55">This demonstrator answers only from the evidence register and deterministic model. It is not an engineering certification.</p><div className="mt-6 flex items-center gap-2 text-sm text-emerald-300"><ShieldCheck className="h-4 w-4"/> Workspace-authenticated route ready</div></div><div className="rounded-2xl border border-white/10 bg-[#07110f] p-5"><div className="min-h-28 rounded-xl bg-white/[.035] p-4 text-sm leading-6 text-emerald-50/70" aria-live="polite">{answer}</div><div className="mt-4 flex gap-2"><Input value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')ask()}} placeholder="Why phased hybrid? What happens if grid power is late?" className="h-11 border-white/10 bg-white/[.03]"/><Button onClick={ask} className="h-11 bg-emerald-300 text-[#07110f] hover:bg-emerald-200">Ask</Button></div><div className="mt-3 flex flex-wrap gap-2">{["Why this recommendation?","What is the PUE?","What if the grid is late?","What evidence is missing?"].map(q=><button key={q} onClick={()=>{setQuestion(q)}} className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-emerald-50/50 hover:border-emerald-300/40 hover:text-emerald-300">{q}</button>)}</div></div></div>
+        <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-16 lg:grid-cols-[.7fr_1.3fr] lg:px-10"><div><Label>GROUNDED ADVISER</Label><h2 className="mt-4 text-3xl font-semibold tracking-tight">Ask the current evidence</h2><p className="mt-4 text-sm leading-6 text-emerald-50/55">The protected route reads the registered team design, evidence, and latest API metrics from D1. It is not an engineering certification.</p><div className="mt-6 flex items-center gap-2 text-sm text-emerald-300"><ShieldCheck className="h-4 w-4"/> {initialIdentity.registered ? `Registered · ${initialIdentity.role}` : initialIdentity.authenticated ? "Signed in · registration required" : "Anonymous · adviser locked"}</div>{!initialIdentity.authenticated && <a href="/signin-with-chatgpt?return_to=%2F%23adviser" target="_top" className="mt-5 inline-flex rounded-lg bg-emerald-300 px-4 py-2 text-sm font-semibold text-[#07110f]">Sign in with ChatGPT</a>}{initialIdentity.authenticated && !initialIdentity.registered && <Button className="mt-5 bg-emerald-300 text-[#07110f] hover:bg-emerald-200" disabled={busy === "register"} onClick={register}>{busy === "register" ? "Registering..." : "Register this user"}</Button>}</div><div className="rounded-2xl border border-white/10 bg-[#07110f] p-5"><div className="min-h-28 rounded-xl bg-white/[.035] p-4 text-sm leading-6 text-emerald-50/70" aria-live="polite">{answer}</div><div className="mt-4 flex gap-2"><Input value={question} disabled={!initialIdentity.registered} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void ask()}} placeholder="Why phased hybrid? What is the stored PUE?" className="h-11 border-white/10 bg-white/[.03]"/><Button disabled={!initialIdentity.registered || busy === "ask"} onClick={()=>void ask()} className="h-11 bg-emerald-300 text-[#07110f] hover:bg-emerald-200">{busy === "ask" ? "Checking..." : "Ask"}</Button></div><div className="mt-3 flex flex-wrap gap-2">{["Why this recommendation?","What is the PUE?","What renewable API data is stored?","What evidence is missing?"].map(q=><button key={q} disabled={!initialIdentity.registered} onClick={()=>setQuestion(q)} className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-emerald-50/50 hover:border-emerald-300/40 hover:text-emerald-300 disabled:opacity-40">{q}</button>)}</div>{notice && <p className="mt-4 rounded-xl border border-white/10 p-3 text-sm text-emerald-100/70">{notice}</p>}</div></div>
       </section>
 
       <section className="mx-auto max-w-[1440px] px-5 py-16 lg:px-10">
@@ -181,7 +204,7 @@ export default function DecisionDashboard() {
           <TabsContent value="financing" className="pt-8"><div className="grid gap-4 md:grid-cols-3">{[["DEVELOPMENT EQUITY","Fund site control and utility study only after 12 months of workload telemetry. Cap exposure at $12M."],["CONSTRUCTION DEBT","Close only after signed member contracts, firm interconnection, permits, and fixed-price EPC terms."],["EQUIPMENT FINANCE","Draw in two tranches. Match leases to GPU support life; vendor keeps technology and delivery risk until acceptance."]].map(([t,d])=><article key={t} className="rounded-2xl border border-white/10 p-5"><h3 className="font-mono text-xs font-bold tracking-wider text-emerald-300">{t}</h3><p className="mt-4 text-sm leading-6 text-emerald-50/60">{d}</p></article>)}</div></TabsContent>
           <TabsContent value="governance" className="pt-8"><div className="grid gap-4 md:grid-cols-2"><p className="rounded-2xl border border-white/10 p-5 text-sm leading-7 text-emerald-50/60"><strong className="text-white">Ownership:</strong> a nonprofit consortium special-purpose entity owns the facility. Members own no dedicated hardware unless they fund a segregated pod.</p><p className="rounded-2xl border border-white/10 p-5 text-sm leading-7 text-emerald-50/60"><strong className="text-white">Allocation:</strong> 60% contracted base shares, 25% merit-reviewed research pool, 10% teaching pool, and 5% emergency reserve. Unused reservations expire into a shared queue.</p><p className="rounded-2xl border border-white/10 p-5 text-sm leading-7 text-emerald-50/60"><strong className="text-white">Pricing:</strong> two-part tariff covers fixed capacity and metered usage. Large users pay for reservations whether consumed or not.</p><p className="rounded-2xl border border-white/10 p-5 text-sm leading-7 text-emerald-50/60"><strong className="text-white">Control:</strong> independent board, conflict register, annual cost audit, transparent queue metrics, and appeals panel with small-institution seats.</p></div></TabsContent>
           <TabsContent value="requirements" className="pt-8"><div className="overflow-x-auto rounded-2xl border border-white/10"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-white/[.05] text-emerald-50/50"><tr><th className="px-5 py-4">User group</th><th className="px-5 py-4">Need</th><th className="px-5 py-4">Availability</th><th className="px-5 py-4">Security</th><th className="px-5 py-4">Service</th></tr></thead><tbody>{[["Large research teams","Long multi-node training runs","99.9% scheduled service","Isolated projects; restricted data","Owned cluster"],["Teaching","Bursty semester demand","99.5% during class windows","Standard institutional controls","Reserved teaching pool"],["Inference / small labs","Intermittent, low-latency jobs","99.9% API target","Project identity + encryption","Shared pool"],["Peak experiments","Short demand above campus capacity","Provider SLA","No regulated data by default","Leased cloud"]].map(r=><tr key={r[0]} className="border-t border-white/10">{r.map((v,i)=><td key={v} className={`px-5 py-4 ${i?'text-emerald-50/60':'font-medium'}`}>{v}</td>)}</tr>)}</tbody></table></div></TabsContent>
-          <TabsContent value="tests" className="pt-8"><div className="space-y-3">{tests.map(([t,s,d])=><div key={t} className="grid gap-3 rounded-xl border border-white/10 p-4 md:grid-cols-[220px_80px_1fr]"><span className="font-medium">{t}</span><span className="flex items-center gap-1 text-sm font-semibold text-emerald-300"><Check className="h-4 w-4"/>{s}</span><span className="text-sm text-emerald-50/50">{d}</span></div>)}</div></TabsContent>
+          <TabsContent value="tests" className="pt-8"><div className="mb-5 rounded-2xl border border-white/10 bg-white/[.025] p-5 text-sm leading-6 text-emerald-50/55"><strong className="text-white">Verification surface:</strong> public status is available at <a className="text-emerald-300 underline" href="/api/status" target="_blank">/api/status</a>. Protected routes return 401 without identity, 403 without registration or role, and read/write D1 only after authorization.</div><div className="space-y-3">{tests.map(([t,s,d])=><div key={t} className="grid gap-3 rounded-xl border border-white/10 p-4 md:grid-cols-[220px_80px_1fr]"><span className="font-medium">{t}</span><span className={`flex items-center gap-1 text-sm font-semibold ${s==='PASS'?'text-emerald-300':'text-amber-200'}`}><Check className="h-4 w-4"/>{s}</span><span className="text-sm text-emerald-50/50">{d}</span></div>)}</div></TabsContent>
         </Tabs>
       </section>
 

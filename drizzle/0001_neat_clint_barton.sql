@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_designs_team_id` ON `designs` (`team_id`);
