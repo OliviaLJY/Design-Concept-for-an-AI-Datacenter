@@ -20,6 +20,10 @@ export async function POST(request: NextRequest) {
     answer = metrics.length ? `The latest validated World Bank records stored in D1 are ${metrics.map((m) => `${m.country}: ${m.value.toFixed(1)}% (${m.reportingPeriod})`).join("; ")}. Retrieved ${metrics[0].retrievedAt}. ${citation("S06")}` : `No external-API metric has been persisted yet. An authorized team administrator must run the World Bank refresh. ${citation("S06")}`;
   } else if (question.includes("grid") || question.includes("delay")) {
     answer = `The firm utility offer remains an approval gate. The evidence does not verify the project-specific energization date, upgrade scope, or curtailment terms. ${citation("U01")}`;
+  } else if (question.includes("govern") || question.includes("member") || question.includes("allocat") || question.includes("capacity")) {
+    answer = `A nonprofit university consortium owns the facility. An independent operating board allocates compute, sets the two-part tariff, and admits new members. Sixty percent is contracted base capacity; 25% is a merit-reviewed research pool, 10% a protected teaching pool, and 5% an emergency reserve. No member may hold more than 20% of base shares without supermajority approval and incremental capacity charges. ${citation("A03")}`;
+  } else if (question.includes("user") || question.includes("demand") || question.includes("gpu-hour") || question.includes("teaching")) {
+    answer = `At 62% productive utilization, phase one supplies about 27.8 million productive GPU-hours per year. The provisional planning mix is 65% large-university training and secure research, 20% teaching, and 15% inference or intermittent research. This mix is an assumption until 12 months of telemetry and seven-year commitments covering 70% of capacity are verified. ${citation("A01")} ${citation("A04")}`;
   } else if (question.includes("why") || question.includes("recommend")) {
     answer = `The phased hybrid limits idle-capacity exposure while preserving control of steady research workloads. It delays phase two until utilization clears the defined gate. ${citation("A01")} ${citation("C01")}`;
   } else {

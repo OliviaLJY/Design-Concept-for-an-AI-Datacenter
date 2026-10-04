@@ -57,6 +57,8 @@ const SOURCE_SEEDS = [
   ["S06", "World Bank / IEA", "Renewable electricity output metadata", "https://databank.worldbank.org/metadataglossary/world-development-indicators/series/EG.ELC.RNEW.ZS", "FACT", "2025-03-25", "The World Bank indicator defines renewable output as generation from renewable plants divided by total generation.", "High"],
   ["A01", "Team model", "Phase-one utilization assumption", "/#economics", "ASSUMPTION", "2026-10-03", "Phase one contains 5,120 GPU equivalents and reaches 62% productive utilization.", "Medium"],
   ["A02", "Team model", "PUE assumption", "/#architecture", "ASSUMPTION", "2026-10-03", "Facility PUE reaches 1.22 with direct-to-chip liquid cooling and dry coolers.", "Medium"],
+  ["A03", "Governance design", "Consortium ownership and allocation policy", "/#users-governance", "ASSUMPTION", "2026-10-04", "A nonprofit university consortium owns the facility; an independent board allocates capacity, sets prices, admits members, and protects shared teaching and research pools.", "Medium"],
+  ["A04", "Demand model", "Phase-one user segmentation", "/#users-governance", "ASSUMPTION", "2026-10-04", "Phase-one demand is provisionally split 65% large-university training and secure research, 20% teaching, and 15% inference or intermittent research, pending 12 months of measured workload telemetry.", "Medium"],
   ["C01", "Deterministic model", "Annual energy calculation", "/#economics", "CALCULATION", "2026-10-03", "10 MW IT x 1.22 PUE x 8,760 hours = 106.9 GWh annual facility energy.", "High"],
   ["U01", "Due diligence", "Open utility diligence", "/#gates", "UNKNOWN", "Open", "Utility upgrade scope, energization date, curtailment terms, and project-specific tariff remain unverified.", "Open"],
 ] as const;
