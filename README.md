@@ -87,11 +87,9 @@ flowchart TD
 3. The server rejects missing identity with HTTP 401.
 4. The server queries the D1 `users` table and rejects an unregistered user with HTTP 403.
 5. The server retrieves the user's current design, evidence records, and latest API metrics from D1.
-6. The server sends only that D1-grounded context and the question to the OpenAI Responses API through MIT Parley.
-7. The adviser returns a concise answer with stored evidence identifiers; the server filters citation IDs against the D1 evidence set.
-8. If the model service is unavailable, the route returns a deterministic D1-grounded fallback rather than inventing an answer.
+6. The adviser calculates or selects a source-aware answer and returns citation identifiers that correspond to stored evidence records.
 
-The production integration uses `OPENAI_BASE_URL=https://parley.api.mit.edu/v1`, a hosted `OPENAI_API_KEY` secret, and `OPENAI_MODEL` (default `gpt-5-mini`). The key remains server-side and is never sent to browser JavaScript, stored in D1, or committed to Git.
+The current adviser is deliberately deterministic and D1-grounded; it does **not** send the question to the OpenAI API. If a model-backed adviser is required, step 6 is the replacement point for a server-side OpenAI call using only the retrieved records and a hosted secret.
 
 ## Cloudflare D1 Schema
 
@@ -187,8 +185,7 @@ Tests were run against the built Worker with a persistent local D1 emulator and 
 | Real API refresh | Validate and persist three countries | Canada, Ireland, and United States rows written to D1 |
 | Simulated API failure | Preserve previous data | HTTP 502 response returned retained records; row count and `lastRefresh` were unchanged |
 | Unauthorized edit | Reject non-admin role | Viewer design update returned HTTP 403 |
-| Model-backed adviser | Ground a real model call in D1 | Protected route calls MIT Parley Responses API and returns the provider/model used |
-| Missing fact | Identify evidence gap | Adviser instructs the model to report the gap and cite the stored unknown `[U01]` instead of inventing a value |
+| Missing fact | Identify evidence gap | Adviser returns the stored unknown `[U01]` instead of inventing a value |
 | Build and type safety | Production build succeeds | Vinext build and `tsc --noEmit` passed |
 
 The public diagnostic endpoint is [`/api/status`](https://university-ai-infrastructure-decision.olivialjy.chatgpt.site/api/status). At the last verification, production D1 contained 13 sources, 2 designs, 1 registered user, and 3 external-API metrics.
@@ -203,7 +200,7 @@ The public diagnostic endpoint is [`/api/status`](https://university-ai-infrastr
 
 **1:02–1:28 — Evidence and API:** Show the Evidence Register, D1 status, World Bank records, refresh timestamp, validation checks, and failure-retention policy.
 
-**1:28–1:48 — Registration and adviser:** Explain the 401/403 server checks, then ask “What is the PUE?” and point to the MIT Parley model label, D1-grounded answer, and citations.
+**1:28–1:48 — Registration and adviser:** Explain the 401/403 server checks, then ask “What is the PUE?” and point to the D1-grounded answer and citations.
 
 **1:48–2:00 — Tests:** Open Test Results and summarize authentication, role enforcement, API refresh, and failure fallback.
 
@@ -236,9 +233,6 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js \
 Start the development server:
 
 ```bash
-export OPENAI_BASE_URL='https://parley.api.mit.edu/v1'
-export OPENAI_MODEL='gpt-5-mini'
-# Export OPENAI_API_KEY securely in the current shell; never commit it.
 pnpm run dev
 ```
 
@@ -255,7 +249,7 @@ The portable preview supports the Sites-provided local sign-in simulator at `/si
 
 ```text
 app/decision-dashboard.tsx   Main decision interface
-app/api/adviser/route.ts     Protected D1-grounded Responses API adviser
+app/api/adviser/route.ts     Protected D1-grounded adviser
 app/api/design/route.ts      Protected team-design update
 app/api/refresh/route.ts     Protected World Bank refresh and validation
 app/api/register/route.ts    D1-backed user registration
